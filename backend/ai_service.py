@@ -204,7 +204,7 @@ def _openai_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
     client = OpenAI(api_key=api_key)
     user_payload = req.model_dump()
 
-    system = """You are AutoIntel AI, an expert automotive diagnostician.
+    system = """You are TorqueTrace, an expert automotive diagnostician.
 Return ONLY valid JSON with this exact shape:
 {
   "causes": [

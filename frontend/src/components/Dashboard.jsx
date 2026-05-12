@@ -77,7 +77,7 @@ export default function Dashboard() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-accent/90">Workshop console</p>
-            <h1 className="font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl">AutoIntel AI</h1>
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl">TorqueTrace</h1>
             <p className="mt-2 max-w-xl text-sm text-zinc-400">
               Symptom capture, OBD intelligence, and ranked repair guidance — tuned for a professional diagnostic bay.
             </p>

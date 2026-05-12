@@ -9,7 +9,7 @@ from routes import diagnosis
 
 load_dotenv()
 
-app = FastAPI(title="AutoIntel AI", version="1.0.0")
+app = FastAPI(title="TorqueTrace", version="1.0.0")
 
 origins = os.getenv(
     "CORS_ORIGINS",
@@ -32,7 +32,7 @@ def on_startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "AutoIntel AI"}
+    return {"status": "ok", "service": "TorqueTrace"}
 
 
 app.include_router(diagnosis.router, prefix="/api")

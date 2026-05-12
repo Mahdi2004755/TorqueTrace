@@ -2,18 +2,18 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: autointel
-      POSTGRES_PASSWORD: autointel
-      POSTGRES_DB: autointel
+      POSTGRES_USER: torquetrace
+      POSTGRES_PASSWORD: torquetrace
+      POSTGRES_DB: torquetrace
     ports:
       - "5432:5432"
     volumes:
-      - autointel_pg:/var/lib/postgresql/data
+      - torquetrace_pg:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autointel -d autointel"]
+      test: ["CMD-SHELL", "pg_isready -U torquetrace -d torquetrace"]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
-  autointel_pg:
+  torquetrace_pg:

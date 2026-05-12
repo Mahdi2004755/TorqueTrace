@@ -1,6 +1,6 @@
-# AutoIntel AI
+# TorqueTrace
 
-AutoIntel AI is a full-stack workshop console for capturing vehicle symptoms, OBD-II codes, and sensory clues, then producing ranked mechanical hypotheses with severity, cost bands, and drive-away safety guidance. Results persist in PostgreSQL for case history.
+TorqueTrace is a full-stack workshop console for capturing vehicle symptoms, OBD-II codes, and sensory clues, then producing ranked mechanical hypotheses with severity, cost bands, and drive-away safety guidance. Results persist in PostgreSQL for case history.
 
 ## Stack
 
@@ -25,7 +25,9 @@ docker compose up -d
 
 Default connection (matches `.env.example`):
 
-`postgresql://autointel:autointel@localhost:5432/autointel`
+`postgresql://torquetrace:torquetrace@localhost:5432/torquetrace`
+
+If you previously ran an older compose file with different Postgres credentials, stop containers and remove the old named volume before bringing the stack up again, or point `DATABASE_URL` at your existing database.
 
 ## 2. Backend
 
@@ -92,7 +94,7 @@ Initialize and push to a new repository (replace the URL with yours):
 ```bash
 git init
 git add .
-git commit -m "Initial commit: AutoIntel AI full-stack app"
+git commit -m "Initial commit: TorqueTrace full-stack app"
 git branch -M main
 git remote add origin https://github.com/<your-username>/<your-repo>.git
 git push -u origin main

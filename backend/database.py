@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://autointel:autointel@localhost:5432/autointel",
+    "postgresql://torquetrace:torquetrace@localhost:5432/torquetrace",
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
