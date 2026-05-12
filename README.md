@@ -2,6 +2,16 @@
 
 **Repository:** [https://github.com/Mahdi2004755/TorqueTrace](https://github.com/Mahdi2004755/TorqueTrace)
 
+All application code lives on the `main` branch of that repository. After you pull or clone, follow the setup steps below.
+
+### GitHub “About” (optional, on github.com)
+
+To tidy the repo page: open the repo → gear icon next to **About** (or **Settings** → General) and set:
+
+- **Description:** `Full-stack workshop assistant: vehicle symptoms + OBD-II → ranked diagnoses. OpenAI web research + synthesis, FastAPI, React, PostgreSQL.`
+- **Website:** your deployed URL when you have one (optional).
+- **Topics:** `torquetrace` `automotive` `obd-ii` `fastapi` `react` `vite` `tailwindcss` `postgresql` `openai` `mechanic`
+
 TorqueTrace is a full-stack workshop console for capturing vehicle symptoms, OBD-II codes, and sensory clues, then producing ranked mechanical hypotheses with severity, cost bands, and drive-away safety guidance. Results are saved in PostgreSQL so you can review past cases.
 
 ## Stack
