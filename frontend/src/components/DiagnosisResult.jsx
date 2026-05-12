@@ -19,6 +19,9 @@ export default function DiagnosisResult({ diagnosis }) {
 
   const ai = diagnosis.ai_result || {};
   const causes = Array.isArray(ai.causes) ? ai.causes : [];
+  const researchNotes = typeof ai.research_notes === "string" && ai.research_notes.trim() ? ai.research_notes : null;
+  const researchSources = Array.isArray(ai.research_sources) ? ai.research_sources : [];
+  const engineNote = typeof ai.research_engine_note === "string" ? ai.research_engine_note : null;
 
   return (
     <section className="rounded-2xl border border-white/10 bg-garage-900/70 p-6 shadow-panel backdrop-blur">
@@ -31,6 +34,12 @@ export default function DiagnosisResult({ diagnosis }) {
           {diagnosis.engine && <p className="text-sm text-zinc-400">{diagnosis.engine}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
+          {(researchNotes || ai.used_web_search) && (
+            <Badge
+              text={ai.used_web_search ? "Research: live web" : "Research: ChatGPT memo"}
+              className="border-violet-500/40 bg-violet-950/35 text-violet-100"
+            />
+          )}
           <Badge text={`Severity: ${ai.severity || "—"}`} className={severityStyles(ai.severity)} />
           <Badge
             text={ai.safe_to_drive ? "Safe to drive: Yes" : "Safe to drive: No"}
@@ -42,6 +51,12 @@ export default function DiagnosisResult({ diagnosis }) {
           />
         </div>
       </div>
+
+      {engineNote && (
+        <div className="mt-4 rounded-lg border border-amber-500/35 bg-amber-950/25 px-3 py-2 text-xs text-amber-100">
+          {engineNote}
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Meta label="Mileage" value={diagnosis.mileage != null ? `${Number(diagnosis.mileage).toLocaleString()} mi` : "—"} />
@@ -56,6 +71,36 @@ export default function DiagnosisResult({ diagnosis }) {
         <p className="mt-1 font-display text-xl text-white">{ai.estimated_repair_cost_range || "—"}</p>
         <p className="mt-3 text-sm leading-relaxed text-zinc-300">{ai.summary}</p>
       </div>
+
+      {researchNotes && (
+        <div className="mt-5 rounded-xl border border-violet-500/25 bg-violet-950/20 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">
+            Research memo {ai.used_web_search ? "(live web)" : "(expert model)"}
+          </p>
+          <div className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+            {researchNotes}
+          </div>
+          {researchSources.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Sources consulted</p>
+              <ul className="mt-2 space-y-1.5 text-xs">
+                {researchSources.map((s, i) => (
+                  <li key={`${s.url}-${i}`}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sky-400 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-300"
+                    >
+                      {s.title || s.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 space-y-4">
         <p className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-500">Top likely causes</p>

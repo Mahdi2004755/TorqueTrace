@@ -9,7 +9,7 @@ TorqueTrace is a full-stack workshop console for capturing vehicle symptoms, OBD
 - **Frontend:** React + Vite + Tailwind CSS  
 - **Backend:** Python FastAPI + SQLAlchemy  
 - **Database:** PostgreSQL  
-- **AI:** OpenAI API when `OPENAI_API_KEY` is set; otherwise a built-in rule library (including P0420, P0430, P0300, rough idle, sulfur smell, ticking, and overheating patterns)
+- **AI:** With `OPENAI_API_KEY`, TorqueTrace runs **(1) a research pass** using the OpenAI **Responses API** and the **`web_search` tool** (live web, when your account/model supports it), then **(2) a synthesis pass** (Chat Completions, JSON) to produce ranked causes and costs. Without a key, a built-in rule library is used (including P0420, P0430, P0300, rough idle, sulfur smell, ticking, and overheating patterns).
 
 ---
 
@@ -23,7 +23,7 @@ Install these on your computer before you start:
 | **Node.js 18+** and **npm** | Runs the web UI |
 | **Python 3.11+** | Runs the API server |
 
-Optional: an **OpenAI API key** if you want cloud-model answers instead of the offline rule engine.
+Optional: an **OpenAI API key** for ChatGPT-quality diagnosis. When configured, the app **searches the web for symptoms, codes, and known issues**, then merges that research into the final ranked report (see `.env.example` for `OPENAI_MODEL`, `OPENAI_RESEARCH_MODEL`, and `TORQUE_WEB_SEARCH`).
 
 ---
 
@@ -106,7 +106,14 @@ pip install -r requirements.txt
   cp ../.env.example .env
   ```
 
-**Step 10.** (Optional) Edit `backend/.env` and set `OPENAI_API_KEY=` to your key if you want OpenAI-powered diagnoses. Leave it blank to use the free rule-based engine.
+**Step 10.** (Optional) Edit `backend/.env`:
+
+- Set `OPENAI_API_KEY=` to your key from [OpenAI](https://platform.openai.com/api-keys).  
+- `OPENAI_MODEL` (default `gpt-4o`) is used for the **final structured diagnosis**.  
+- `OPENAI_RESEARCH_MODEL` is a comma-separated list (default `gpt-4.1,gpt-4o,gpt-4o-mini`) tried in order for the **web research** pass; your account must allow those models with the **web_search** tool (see OpenAI docs).  
+- `TORQUE_WEB_SEARCH=true` (default) keeps live web search on; set to `false` to use a strong **expert-only research memo** (no live web) and still improve on the old single-shot JSON.
+
+Restart the API after changing `.env`.
 
 **Step 11.** Start the API server (leave this terminal **open**):
 
@@ -201,7 +208,8 @@ The **right-hand panel** (or section below the form on small screens) shows the 
 1. **Severity** and **Safe to drive** badges — treat **Safe to drive: No** seriously; it is a conservative flag for risky patterns (for example overheating or certain misfire codes in rule mode).  
 2. **Estimated repair cost** — a rough band, not a quote.  
 3. **Summary** — short overview in plain language.  
-4. **Top likely causes** — up to three items, each with:  
+4. **Research memo** (when OpenAI is configured) — scroll the violet panel for web-backed or expert-only research notes; use **Sources consulted** links when shown. The ranked causes below are written to align with this memo.  
+5. **Top likely causes** — up to three items, each with:  
    - **Probability** bar  
    - **Explanation**  
    - **Next steps** — what to verify on the vehicle or with a scan tool  
@@ -231,6 +239,7 @@ Every successful run is **saved to the database** automatically.
 | `GET` | `/api/diagnoses` | List all diagnoses (newest first) |
 | `GET` | `/api/diagnoses/{id}` | Get one diagnosis by id |
 | `DELETE` | `/api/diagnoses/{id}` | Delete a diagnosis |
+| `GET` | `/api/config` | Public flags (e.g. whether OpenAI is configured) |
 | `GET` | `/api/health` | Health check |
 
 Interactive docs (while the backend is running): [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)

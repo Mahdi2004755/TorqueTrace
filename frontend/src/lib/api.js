@@ -10,6 +10,12 @@ async function parseJson(res) {
   }
 }
 
+export async function fetchAppConfig() {
+  const res = await fetch(`${base()}/api/config`);
+  if (!res.ok) throw new Error("Failed to load app config");
+  return res.json();
+}
+
 export async function fetchDiagnoses() {
   const res = await fetch(`${base()}/api/diagnoses`);
   if (!res.ok) throw new Error("Failed to load diagnoses");

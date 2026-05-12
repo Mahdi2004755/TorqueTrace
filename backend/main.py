@@ -35,4 +35,15 @@ def health():
     return {"status": "ok", "service": "TorqueTrace"}
 
 
+@app.get("/api/config")
+def public_config():
+    """Non-secret flags for the UI (e.g., prompt to configure OpenAI)."""
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    return {
+        "openai_configured": bool(key),
+        "web_search_enabled_default": os.getenv("TORQUE_WEB_SEARCH", "true").strip().lower()
+        not in ("0", "false", "no", "off"),
+    }
+
+
 app.include_router(diagnosis.router, prefix="/api")

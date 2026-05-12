@@ -1,4 +1,4 @@
-"""OpenAI-backed diagnosis with rule-based fallback when no API key is set."""
+"""OpenAI-backed diagnosis with optional web search (Responses API) + synthesis; rule-based fallback."""
 
 from __future__ import annotations
 
@@ -27,6 +27,12 @@ def _text_blob(req: DiagnoseRequest) -> str:
         req.obd_codes or "",
     ]
     return " ".join(parts).lower()
+
+
+def _truthy(val: str | None, default: bool = True) -> bool:
+    if val is None or val.strip() == "":
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
 
 
 RULE_OBD: dict[str, dict[str, Any]] = {
@@ -184,7 +190,7 @@ def _rule_based_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
     summary = (
         f"Rule-based assessment for {req.vehicle_year} {req.make} {req.model}: "
         f"primary suspicion is {causes[0]['title'].lower()}. "
-        "This is not a substitute for a hands-on inspection."
+        "For deeper, vehicle-specific answers, set OPENAI_API_KEY to enable ChatGPT with optional web research."
     )
 
     return {
@@ -193,19 +199,211 @@ def _rule_based_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
         "estimated_repair_cost_range": cost,
         "safe_to_drive": safe_to_drive,
         "summary": summary,
+        "used_web_search": False,
+        "research_notes": None,
+        "research_sources": [],
     }
 
 
-def _openai_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return _rule_based_diagnosis(req)
+def _research_models() -> list[str]:
+    raw = os.getenv("OPENAI_RESEARCH_MODEL", "").strip()
+    if raw:
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    return ["gpt-4.1", "gpt-4o", "gpt-4o-mini"]
 
-    client = OpenAI(api_key=api_key)
-    user_payload = req.model_dump()
 
-    system = """You are TorqueTrace, an expert automotive diagnostician.
-Return ONLY valid JSON with this exact shape:
+def _synthesis_model() -> str:
+    return (os.getenv("OPENAI_MODEL", "gpt-4o").strip() or "gpt-4o")
+
+
+def _build_research_prompt(req: DiagnoseRequest) -> str:
+    return f"""You have access to web search. Use it to research this automotive workshop case and produce a concise technical memo.
+
+Vehicle: {req.vehicle_year} {req.make} {req.model}
+Engine: {req.engine or "not specified"}
+Mileage: {req.mileage if req.mileage is not None else "not specified"}
+
+Symptoms / complaint:
+{req.symptoms or "(none)"}
+
+OBD-II codes (if any):
+{req.obd_codes or "(none)"}
+
+Noise:
+{req.noise_description or "(none)"}
+
+Smell:
+{req.smell_description or "(none)"}
+
+Instructions:
+1) Run targeted searches for the codes + vehicle family + symptoms (e.g., forums, TSB summaries, manufacturer service bulletins where available, reputable repair guides).
+2) Summarize what each code typically implies for this era of vehicle (not generic only — tie to likely subsystems).
+3) List the most plausible mechanical/electrical causes ranked by likelihood, with 1–2 sentences of evidence each.
+4) Call out safety-critical differentials (overheating, brake loss, fuel leaks, exhaust leaks into cabin, runaway acceleration risk, etc.).
+5) Recommend a sensible verification sequence (what to check first with minimal parts cost).
+
+Write the memo in clear Markdown with short sections. Be explicit and practical."""
+
+
+def _responses_text_and_sources(response: Any) -> tuple[str, list[dict[str, str]]]:
+    text_parts: list[str] = []
+    sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    ot = getattr(response, "output_text", None)
+    if ot:
+        text_parts.append(str(ot))
+
+    output = getattr(response, "output", None)
+    if output is None and isinstance(response, dict):
+        output = response.get("output")
+
+    if not output:
+        return ("\n\n".join(text_parts).strip(), sources)
+
+    for item in output:
+        itype = getattr(item, "type", None)
+        if itype is None and isinstance(item, dict):
+            itype = item.get("type")
+        if itype != "message":
+            continue
+
+        content = getattr(item, "content", None)
+        if content is None and isinstance(item, dict):
+            content = item.get("content") or []
+
+        for block in content or []:
+            btype = getattr(block, "type", None)
+            if btype is None and isinstance(block, dict):
+                btype = block.get("type")
+            if btype not in ("output_text", "text"):
+                continue
+
+            t = getattr(block, "text", None)
+            if t is None and isinstance(block, dict):
+                t = block.get("text")
+            if t:
+                text_parts.append(str(t))
+
+            annots = getattr(block, "annotations", None)
+            if annots is None and isinstance(block, dict):
+                annots = block.get("annotations") or []
+
+            for ann in annots or []:
+                atype = getattr(ann, "type", None)
+                if atype is None and isinstance(ann, dict):
+                    atype = ann.get("type")
+                if atype != "url_citation":
+                    continue
+                url = getattr(ann, "url", None) or (ann.get("url") if isinstance(ann, dict) else None)
+                title = getattr(ann, "title", None) or (ann.get("title") if isinstance(ann, dict) else "") or ""
+                if url and str(url) not in seen:
+                    seen.add(str(url))
+                    sources.append({"url": str(url), "title": str(title) if title else str(url)})
+
+    return ("\n\n".join(text_parts).strip(), sources)
+
+
+def _web_research_memo(client: OpenAI, req: DiagnoseRequest) -> tuple[str, list[dict[str, str]], str | None]:
+    prompt = _build_research_prompt(req)
+    last_err: str | None = None
+
+    for model in _research_models():
+        for attempt in (1, 2):
+            try:
+                if attempt == 1:
+                    resp = client.responses.create(
+                        model=model,
+                        input=prompt,
+                        tools=[{"type": "web_search", "search_context_size": "high"}],
+                        tool_choice="required",
+                    )
+                else:
+                    resp = client.responses.create(
+                        model=model,
+                        input=prompt,
+                        tools=[{"type": "web_search"}],
+                    )
+                text, sources = _responses_text_and_sources(resp)
+                if text:
+                    return text, sources, None
+                last_err = "empty research output"
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+    return "", [], last_err
+
+
+def _chat_research_memo(client: OpenAI, model: str, req: DiagnoseRequest) -> str:
+    system = """You are an expert automotive diagnostician and technical writer.
+You do NOT have live web access in this mode. Apply strong general knowledge: OBD-II definitions, common failures by vehicle era and platform, interaction between symptoms, and safe workshop practice.
+
+Write a structured research memo in Markdown with sections:
+## OBD / scan context
+## Platform / vehicle-family notes (for this year, make, model, engine when inferable)
+## Ranked hypotheses (most likely first; short rationale each)
+## Safety-critical differentials
+## Verification sequence (tests/inspections in sensible order)
+
+Be specific: name components, tests, and expected findings. State uncertainty where appropriate."""
+    user = json.dumps(req.model_dump(), indent=2)
+    r = client.chat.completions.create(
+        model=model,
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    )
+    return (r.choices[0].message.content or "").strip()
+
+
+def _normalize_causes_payload(causes: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for c in causes[:3]:
+        if not isinstance(c, dict):
+            continue
+        normalized.append(
+            {
+                "title": str(c.get("title", "Unknown issue"))[:220],
+                "probability": int(c.get("probability", 34)),
+                "explanation": str(c.get("explanation", ""))[:4000],
+                "recommended_next_steps": str(
+                    c.get("recommended_next_steps", c.get("next_steps", ""))
+                )[:4000],
+            }
+        )
+    while len(normalized) < 3:
+        normalized.append(
+            {
+                "title": "Further diagnosis required",
+                "probability": 20,
+                "explanation": "Insufficient structured output; verify with inspection and scan data.",
+                "recommended_next_steps": "Re-scan all modules, review live data, and perform targeted tests from the research memo.",
+            }
+        )
+    probs = [max(0, min(100, int(x["probability"]))) for x in normalized[:3]]
+    total_p = sum(probs) or 1
+    for i in range(3):
+        normalized[i]["probability"] = max(8, min(90, int(round(100 * probs[i] / total_p))))
+    delta = 100 - sum(normalized[i]["probability"] for i in range(3))
+    normalized[0]["probability"] = max(8, min(92, normalized[0]["probability"] + delta))
+    return normalized[:3]
+
+
+def _synthesize_diagnosis(
+    client: OpenAI,
+    model: str,
+    req: DiagnoseRequest,
+    research_notes: str,
+    used_web_search: bool,
+) -> dict[str, Any]:
+    system = """You are TorqueTrace, the final synthesis engine for an automotive workshop app.
+
+You will receive CASE JSON plus an optional RESEARCH MEMO (from live web search + expert reasoning, or expert-only).
+
+Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
   "causes": [
     {
@@ -220,48 +418,40 @@ Return ONLY valid JSON with this exact shape:
   "safe_to_drive": boolean,
   "summary": "string"
 }
+
 Rules:
-- Provide exactly 3 items in causes, sorted by probability descending.
-- Probabilities are best-estimates and should sum to roughly 100 (allow small rounding slack).
-- Be practical and safety-conscious; if overheating, major brake loss, or large fluid leaks are implied, set safe_to_drive false.
-- Mention when professional inspection is required.
-"""
+- Exactly 3 causes, sorted by probability descending.
+- Integer probabilities should sum to 100 (small rounding slack allowed).
+- Ground causes, explanations, and next steps in the RESEARCH MEMO when it is substantive; reconcile with OBD codes and symptoms.
+- If the memo is thin, still give the best defensible automotive judgment for this vehicle context.
+- Never invent specific recall numbers or URLs; speak generically if unsure.
+- Severity and safe_to_drive must reflect real risk (overheating in red zone, brake failure, large fuel leak, severe misfire under load, loss of steering assist, etc. => safe_to_drive false and usually High severity).
+- estimated_repair_cost_range: realistic independent-shop ballpark in USD; use a wide band when uncertain.
+- summary: 2-4 sentences, plain language, mentions top suspicion."""
+
+    user = (
+        "CASE_JSON:\n"
+        + json.dumps(req.model_dump(), indent=2)
+        + "\n\nRESEARCH_MEMO (may be long):\n"
+        + (research_notes or "(none — use best expert judgment)")
+        + "\n\nINTERNAL_FLAGS:\n"
+        + json.dumps({"used_web_search": used_web_search})
+    )
 
     resp = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=model,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(user_payload)},
+            {"role": "user", "content": user},
         ],
-        temperature=0.35,
+        temperature=0.25,
     )
 
     content = resp.choices[0].message.content or "{}"
     data = json.loads(content)
-
     causes = data.get("causes") or []
-    if len(causes) != 3:
-        return _rule_based_diagnosis(req)
-
-    normalized: list[dict[str, Any]] = []
-    for c in causes[:3]:
-        normalized.append(
-            {
-                "title": str(c.get("title", "Unknown issue"))[:220],
-                "probability": int(c.get("probability", 34)),
-                "explanation": str(c.get("explanation", ""))[:2000],
-                "recommended_next_steps": str(
-                    c.get("recommended_next_steps", c.get("next_steps", ""))
-                )[:2000],
-            }
-        )
-    probs = [max(0, min(100, x["probability"])) for x in normalized]
-    total_p = sum(probs) or 1
-    for i, row in enumerate(normalized):
-        row["probability"] = max(8, min(90, int(round(100 * probs[i] / total_p))))
-    delta = 100 - sum(r["probability"] for r in normalized)
-    normalized[0]["probability"] = max(8, min(92, normalized[0]["probability"] + delta))
+    normalized = _normalize_causes_payload(causes if isinstance(causes, list) else [])
 
     sev = str(data.get("severity", "Medium"))
     if sev not in ("Low", "Medium", "High"):
@@ -270,17 +460,59 @@ Rules:
     return {
         "causes": normalized,
         "severity": sev,
-        "estimated_repair_cost_range": str(
-            data.get("estimated_repair_cost_range", "$200 – $800")
-        )[:200],
+        "estimated_repair_cost_range": str(data.get("estimated_repair_cost_range", "$200 – $900"))[:200],
         "safe_to_drive": bool(data.get("safe_to_drive", True)),
-        "summary": str(data.get("summary", "Diagnosis complete."))[:2000],
+        "summary": str(data.get("summary", "Diagnosis complete."))[:4000],
     }
 
 
+def _openai_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return _rule_based_diagnosis(req)
+
+    client = OpenAI(api_key=api_key)
+    synth_model = _synthesis_model()
+    use_web = _truthy(os.getenv("TORQUE_WEB_SEARCH"), default=True)
+
+    research_notes = ""
+    sources: list[dict[str, str]] = []
+    used_web = False
+    research_err: str | None = None
+
+    if use_web:
+        memo, src, err = _web_research_memo(client, req)
+        if memo:
+            research_notes = memo
+            sources = src
+            used_web = True
+        else:
+            research_err = err
+
+    if not research_notes.strip():
+        research_notes = _chat_research_memo(client, synth_model, req)
+        used_web = False
+
+    base = _synthesize_diagnosis(client, synth_model, req, research_notes, used_web)
+
+    max_notes = int(os.getenv("TORQUE_RESEARCH_MAX_CHARS", "12000"))
+    base["research_notes"] = research_notes[:max_notes] if research_notes else None
+    base["research_sources"] = sources[:25]
+    base["used_web_search"] = used_web
+    if research_err and not used_web:
+        base["research_engine_note"] = (
+            f"Web search was requested but unavailable for the configured research models: {research_err[:500]}"
+        )
+    return base
+
+
 def run_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
-    """Prefer OpenAI when configured; otherwise deterministic rules."""
+    """Prefer OpenAI (web research + synthesis) when configured; otherwise deterministic rules."""
     try:
         return _openai_diagnosis(req)
     except Exception:
-        return _rule_based_diagnosis(req)
+        out = _rule_based_diagnosis(req)
+        out["research_engine_note"] = (
+            "OpenAI request failed; fell back to built-in rules. Check OPENAI_API_KEY, billing, and model access."
+        )
+        return out

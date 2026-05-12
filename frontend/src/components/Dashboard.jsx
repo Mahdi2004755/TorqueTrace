@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createDiagnosis, deleteDiagnosis, fetchDiagnoses } from "../lib/api.js";
+import { createDiagnosis, deleteDiagnosis, fetchAppConfig, fetchDiagnoses } from "../lib/api.js";
 import DiagnosisForm from "./DiagnosisForm.jsx";
 import DiagnosisHistory from "./DiagnosisHistory.jsx";
 import DiagnosisResult from "./DiagnosisResult.jsx";
@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [active, setActive] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [appConfig, setAppConfig] = useState({ openai_configured: true, web_search_enabled_default: true });
 
   const load = useCallback(async () => {
     setLoadingList(true);
@@ -45,6 +46,12 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    fetchAppConfig()
+      .then(setAppConfig)
+      .catch(() => setAppConfig({ openai_configured: false, web_search_enabled_default: true }));
+  }, []);
 
   const handleSubmit = async (form) => {
     setSubmitting(true);
@@ -93,6 +100,16 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 pt-8 sm:px-6 lg:px-8">
+        {!appConfig.openai_configured && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm text-amber-100">
+            <strong className="font-semibold text-amber-50">ChatGPT quality is off.</strong> Add{" "}
+            <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-xs">OPENAI_API_KEY</code> to{" "}
+            <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-xs">backend/.env</code>, restart the API,
+            then TorqueTrace will run a <strong>web research pass</strong> (when enabled) and a stronger synthesis model
+            instead of the basic offline rules.
+          </div>
+        )}
+
         {listError && (
           <div className="rounded-lg border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-100">
             {listError}
