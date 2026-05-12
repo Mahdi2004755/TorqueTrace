@@ -467,6 +467,10 @@ Rules:
 
 
 def _openai_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
+    # OpenAI is opt-in so the app never sends requests or uses a key unless explicitly enabled.
+    if not _truthy(os.getenv("TORQUE_USE_OPENAI"), default=False):
+        return _rule_based_diagnosis(req)
+
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         return _rule_based_diagnosis(req)
@@ -507,7 +511,7 @@ def _openai_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
 
 
 def run_diagnosis(req: DiagnoseRequest) -> dict[str, Any]:
-    """Prefer OpenAI (web research + synthesis) when configured; otherwise deterministic rules."""
+    """OpenAI (web research + synthesis) only when TORQUE_USE_OPENAI=true and OPENAI_API_KEY is set; else rules."""
     try:
         return _openai_diagnosis(req)
     except Exception:

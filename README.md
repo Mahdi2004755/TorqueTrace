@@ -19,7 +19,7 @@ TorqueTrace is a full-stack workshop console for capturing vehicle symptoms, OBD
 - **Frontend:** React + Vite + Tailwind CSS  
 - **Backend:** Python FastAPI + SQLAlchemy  
 - **Database:** PostgreSQL  
-- **AI:** With `OPENAI_API_KEY`, TorqueTrace runs **(1) a research pass** using the OpenAI **Responses API** and the **`web_search` tool** (live web, when your account/model supports it), then **(2) a synthesis pass** (Chat Completions, JSON) to produce ranked causes and costs. Without a key, a built-in rule library is used (including P0420, P0430, P0300, rough idle, sulfur smell, ticking, and overheating patterns).
+- **AI:** By default TorqueTrace uses a **built-in rule library** only (no network calls, no API key). If you set **`TORQUE_USE_OPENAI=true`** and **`OPENAI_API_KEY`**, it runs **(1) a research pass** (OpenAI **Responses API** + optional **`web_search`**), then **(2) a synthesis pass** (Chat Completions, JSON) for ranked causes and costs.
 
 ---
 
@@ -33,7 +33,7 @@ Install these on your computer before you start:
 | **Node.js 18+** and **npm** | Runs the web UI |
 | **Python 3.11+** | Runs the API server |
 
-Optional: an **OpenAI API key** for ChatGPT-quality diagnosis. When configured, the app **searches the web for symptoms, codes, and known issues**, then merges that research into the final ranked report (see `.env.example` for `OPENAI_MODEL`, `OPENAI_RESEARCH_MODEL`, and `TORQUE_WEB_SEARCH`).
+Optional: set **`TORQUE_USE_OPENAI=true`** and an **OpenAI API key** only if you want ChatGPT + optional web research. Leave **`TORQUE_USE_OPENAI=false`** (the default) to keep all diagnosis **offline** — no OpenAI requests and no key usage (see `.env.example`).
 
 ---
 
@@ -116,12 +116,13 @@ pip install -r requirements.txt
   cp ../.env.example .env
   ```
 
-**Step 10.** (Optional) Edit `backend/.env`:
+**Step 10.** (Optional) Edit `backend/.env` only if you want OpenAI features:
 
-- Set `OPENAI_API_KEY=` to your key from [OpenAI](https://platform.openai.com/api-keys).  
+- Default behavior: **`TORQUE_USE_OPENAI=false`** — the app **never calls OpenAI** and does not use a key (built-in rules only).  
+- To enable ChatGPT: set **`TORQUE_USE_OPENAI=true`**, then set **`OPENAI_API_KEY=`** from [OpenAI](https://platform.openai.com/api-keys).  
 - `OPENAI_MODEL` (default `gpt-4o`) is used for the **final structured diagnosis**.  
 - `OPENAI_RESEARCH_MODEL` is a comma-separated list (default `gpt-4.1,gpt-4o,gpt-4o-mini`) tried in order for the **web research** pass; your account must allow those models with the **web_search** tool (see OpenAI docs).  
-- `TORQUE_WEB_SEARCH=true` (default) keeps live web search on; set to `false` to use a strong **expert-only research memo** (no live web) and still improve on the old single-shot JSON.
+- `TORQUE_WEB_SEARCH=true` (default) keeps live web search on when OpenAI is enabled; set to `false` for an **expert-only research memo** (no live web).
 
 Restart the API after changing `.env`.
 
@@ -249,7 +250,7 @@ Every successful run is **saved to the database** automatically.
 | `GET` | `/api/diagnoses` | List all diagnoses (newest first) |
 | `GET` | `/api/diagnoses/{id}` | Get one diagnosis by id |
 | `DELETE` | `/api/diagnoses/{id}` | Delete a diagnosis |
-| `GET` | `/api/config` | Public flags (e.g. whether OpenAI is configured) |
+| `GET` | `/api/config` | Public flags (`llm_diagnostics_active`, `torque_use_openai`, etc.) |
 | `GET` | `/api/health` | Health check |
 
 Interactive docs (while the backend is running): [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
