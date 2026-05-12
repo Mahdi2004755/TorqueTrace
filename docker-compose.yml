@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: autointel
+      POSTGRES_PASSWORD: autointel
+      POSTGRES_DB: autointel
+    ports:
+      - "5432:5432"
+    volumes:
+      - autointel_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autointel -d autointel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  autointel_pg:
