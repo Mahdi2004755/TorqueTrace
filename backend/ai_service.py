@@ -79,7 +79,7 @@ RULE_KEYWORDS: list[tuple[list[str], dict[str, Any]]] = [
         },
     ),
     (
-        ["overheat", "overheating", "hot", "temperature high"],
+        ["overheat", "overheating", "running hot", "temperature gauge", "temperature high"],
         {
             "title": "Cooling system fault or head gasket breach",
             "probability": 74,
